@@ -1,0 +1,99 @@
+# This workflow defines the CI/CD pipeline for the File Storage API
+
+name: CI/CD Pipeline
+
+on:
+  # Trigger the workflow on pull requests to the main branch
+  pull_request:
+    branches: [ "main" ]
+  
+  # Trigger the workflow on pushes to the main branch
+  push:
+    branches: [ "main" ]
+
+jobs:
+  # This job runs only for pull requests
+  test-and-load:
+    # Check that the event is a pull request
+    if: github.event_name == 'pull_request'
+    name: Run Tests and Load Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip' # Cache pip dependencies
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Pytest unit tests
+        run: |
+          pytest test_main.py
+
+      - name: Start API server in background
+        run: |
+          # Start uvicorn as a background process
+          uvicorn main:app --host 0.0.0.0 --port 8000 &
+          
+      - name: Wait for server to be ready
+        run: |
+          echo "Waiting for server to start..."
+          # Poll the /health endpoint until it returns a "healthy" status
+          # Timeout after 20 seconds if it never starts
+          timeout 20 bash -c 'until curl -s http://localhost:8000/health | grep -q "healthy"; do sleep 1; done'
+          echo "Server is up!"
+
+      - name: Run Locust load test
+        run: |
+          # Run locust in headless mode
+          # -u 10 = 10 users
+          # -r 5 = spawn 5 users per second
+          # -t 30s = run for 30 seconds
+          locust -f locustfile.py --headless -u 10 -r 5 -t 30s --host http://localhost:8000
+
+  # This job runs only for pushes to the main branch
+  build-and-push:
+    # Check that the event is a push to the main branch
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    
+    # Define permissions needed to push to GitHub Container Registry
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          # Tag the image with 'latest' and the git commit SHA
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          # Use GitHub Actions cache for Docker layers
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
