@@ -92,8 +92,8 @@ jobs:
           push: true
           # Tag the image with 'latest' and the git commit SHA
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+             ghcr.io/${{ github.repository_owner.name_lowercase }}/${{ github.repository.name_lowercase }}:latest
+             ghcr.io/${{ github.repository_owner.name_lowercase }}/${{ github.repository.name_lowercase }}:${{ github.sha }}
           # Use GitHub Actions cache for Docker layers
           cache-from: type=gha
           cache-to: type=gha,mode=max
