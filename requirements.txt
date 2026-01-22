@@ -4,3 +4,4 @@ python-multipart==0.0.6
 pytest==8.4.2
 httpx==0.24.1
 locust==2.42.2
+flake8==7.0.0
